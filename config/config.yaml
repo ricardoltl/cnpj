@@ -1,4 +1,4 @@
-base_url: 'http://200.152.38.155/CNPJ/dados_abertos_cnpj/'
+base_url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'
 
 # Incoming CSV Settings
 csv_sep: ';'

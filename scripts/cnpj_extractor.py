@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yaml
+import re
 
 ########################## Load Configurations ##########################
 data_incoming_foldername = 'data_incoming'
@@ -74,8 +75,12 @@ def get_latest_month_folder(url):
         response = requests.get(url)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
-        # Find all links to directories (usually ending with /)
-        directories = [a['href'] for a in soup.find_all('a', href=True) if a['href'].endswith('/')]
+        
+        # Regex to match folders with the format YYYY-MM
+        folder_pattern = re.compile(r'\b\d{4}-\d{2}\b')
+        
+        # Find all links to directories (usually ending with /) that match the format YYYY-MM
+        directories = [a['href'].strip('/') for a in soup.find_all('a', href=True) if folder_pattern.match(a['href'])]
         # Sort directories to find the most recent one
         latest_folder = sorted(directories, reverse=True)[0]
         return latest_folder.strip('/')
@@ -162,7 +167,7 @@ latest_folder = get_latest_month_folder(base_url)
 if latest_folder:
     tqdm.write(f"Latest month folder: {latest_folder}")
     # Build the full folder URL for the latest month
-    folder_url = base_url + latest_folder + '/'
+    folder_url = base_url + '/' + latest_folder + '/'
     
     # Get all files in the folder
     files_in_folder = get_all_files_in_folder(folder_url)
