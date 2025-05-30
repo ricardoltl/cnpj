@@ -1,6 +1,6 @@
 # CNPJ Data Extractor
 
-> 🇧🇷 **Versão em português disponível aqui** → [README.md](README.md)
+> 📘 **Versão em português disponível aqui** → [README.md](README.md)
 
 ## Project Overview
 
