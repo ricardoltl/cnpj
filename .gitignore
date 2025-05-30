@@ -4,7 +4,4 @@
 /data_outgoing/
 /docs/
 
-# Ignore the executable batch file in the root
-/execute-model.bat
-
 venv

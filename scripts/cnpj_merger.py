@@ -1,5 +1,6 @@
 import pandas as pd
 import logging
+from tqdm import tqdm
 import os
 import zipfile
 import yaml
@@ -40,65 +41,17 @@ dtypes = config['dtypes']
 
 ########################## Functions ##########################
 
-def process_and_merge_files(file_params, dtype_dict, prefix, filter_condition=None):
-    """Read and merge files from ZIP archives based on specific conditions."""
-    dfs = []  # List to store DataFrames
-    columns = list(dtype_dict.keys())  # Get column names from dtype_dict keys
-
-    for file_list in file_params:
-        zip_file_path = file_list[0]
-        zip_filename = file_list[1]
-        logging.info(f'Reading from ZIP: {zip_filename}')
-        print(f'Reading from ZIP: {zip_filename}')
-
-        try:
-            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                zip_file_list = zip_ref.namelist()
-                if len(zip_file_list) == 1:
-                    with zip_ref.open(zip_file_list[0]) as csvfile:
-                        df_buff = pd.read_csv(csvfile, sep=csv_sep, decimal=csv_dec, quotechar=csv_quote, dtype=str, encoding=csv_enc, header=None, keep_default_na=False)
-                        df_buff.columns = columns
-                        for column, dtype in dtype_dict.items():
-                            if dtype == bool:
-                                df_buff[column] = df_buff[column].astype(int).astype(bool) # file conversion safety in case of bolean
-                            else:
-                                df_buff[column] = df_buff[column].astype(dtype)
-
-                    if filter_condition is not None:
-                        df_buff = filter_condition(df_buff)
-
-                    # print(df_buff.dtypes)
-                    logging.info(f'Appending: {zip_filename}')
-                    print(f'Appending: {zip_filename}')
-                    dfs.append(df_buff)
-
-                else:
-                    logging.warning(f'ZIP file {zip_filename} contains more than one file.')
-                    print(f'Warning: ZIP file {zip_filename} contains more than one file.')
-
-        except Exception as e:
-            logging.error(f"Error processing {zip_filename}: {e}")
-            print(f"Error processing {zip_filename}: {e}")
-    
-    if dfs:
-        merged_df = pd.concat(dfs, ignore_index=True)
-        merged_df.columns = columns
-    else:
-        merged_df = pd.DataFrame(columns=dtype_dict.keys())
-
-    return merged_df
-
-def export_dataframe(df, export_path):
-    """Exports the DataFrame to the specified format."""
-    export_format = export_path.split('.')[-1]
+def export_dataframe(df, export_path, mode='w', header=True):
+    """Exports the DataFrame to the specified format with given mode."""
+    export_format = export_path.split('.')[-1].lower()
     if export_format == "csv":
-        df.to_csv(export_path, index=False, sep=csv_sep, encoding=csv_enc, quotechar=csv_quote)
+        df.to_csv(export_path, index=False, sep=csv_sep, encoding=csv_enc, quotechar=csv_quote, mode=mode, header=header)
     elif export_format == "parquet":
-        df.to_parquet(export_path, index=False)
-    elif export_format == "json":
-        df.to_json(export_path, orient="records", lines=True)
-    elif export_format == "feather":
-        df.to_feather(export_path)
+        #df.to_parquet(export_path, engine="pyarrow", compression="snappy")
+        if header:
+            df.to_parquet(export_path, engine='fastparquet')
+        else:
+            df.to_parquet(export_path, engine='fastparquet', append=True)
     else:
         raise ValueError(f"Unsupported export format: {export_format}")
 
@@ -106,11 +59,11 @@ def export_dataframe(df, export_path):
 
 logging.basicConfig(filename=path_log, level=logging.INFO, format='%(asctime)s | %(name)s | %(levelname)s | %(message)s')
 logging.info('Starting script')
-print('Starting script')
+tqdm.write('Starting script')
 
 ### Mapping incoming files
 logging.info('Mapping incoming files')
-print('Mapping incoming files')
+tqdm.write('Mapping incoming files')
 
 # Parameters for each table
 file_params = {prefix: [] for prefix in dtypes.keys()}
@@ -125,11 +78,61 @@ for root, directories, files in os.walk(path_incoming):
                 if file_with_no_ext.startswith(prefix.title()):
                     file_params[prefix].append([zip_file_path, filename, file_with_no_ext])
 
+logging.info(f'Executing File Processing')
+tqdm.write(f'Executing File Processing')
+
 # Processing and exporting files for all tables
 for prefix, params in file_params.items():
-    dtypes_var = dtypes[prefix]  # Get dtypes for the prefix
-    df_merged = process_and_merge_files(params, dtypes_var, prefix)
-    logging.info(f'Exporting: {prefix}')
-    print(f'Exporting: {prefix}')
-    outgoing_file_path = os.path.join(path_outgoing, prefix + '.' + export_format)
-    export_dataframe(df_merged, outgoing_file_path)
+    dtypes_var = dtypes[prefix]
+    outgoing_file_path = os.path.join(path_outgoing, f"{prefix}.{export_format}")
+
+    logging.info(f'Starting: {prefix}')
+    tqdm.write(f'Starting: {prefix}')
+
+    # Remove existing output file to avoid appending to old data
+    if os.path.exists(outgoing_file_path):
+        logging.info(f'Old target file exists. Removing from: {outgoing_file_path}')
+        tqdm.write(f'Old target file exists. Removing from: {outgoing_file_path}')
+        os.remove(outgoing_file_path)
+
+    columns = list(dtypes_var.keys())
+    is_first = True
+
+    for file_list in params:
+        zip_file_path = file_list[0]
+        zip_filename = file_list[1]
+
+        try:
+            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                zip_file_list = zip_ref.namelist()
+                if len(zip_file_list) == 1:
+                    with zip_ref.open(zip_file_list[0]) as csvfile:
+                        logging.info(f'Reading from ZIP: {zip_filename}')
+                        tqdm.write(f'Reading from ZIP: {zip_filename}')
+                        df_buff = pd.read_csv(
+                            csvfile,
+                            header=None,
+                            names=columns,
+                            dtype=dtypes_var,
+                            sep=csv_sep,
+                            decimal=csv_dec,
+                            quotechar=csv_quote,
+                            encoding=csv_enc,
+                            low_memory=False
+                            #, nrows=10_000 # For testing
+                        )
+                    if is_first:
+                        logging.info(f'Creating file {export_format}: {outgoing_file_path}')
+                        tqdm.write(f'Creating file {export_format}: {outgoing_file_path}')
+                    else:
+                        logging.info(f'Appending to existing file {export_format}: {outgoing_file_path}')
+                        tqdm.write(f'Appending to existing file {export_format}: {outgoing_file_path}')
+                    export_dataframe(df_buff, outgoing_file_path, header=is_first)
+                    is_first = False
+
+                else:
+                    raise ValueError(f"ZIP file {zip_filename} contains more than one file.")
+
+        except Exception as e:
+            logging.error(f"Error processing {zip_filename}: {e}")
+            tqdm.write(f"Error processing {zip_filename}: {e}")
