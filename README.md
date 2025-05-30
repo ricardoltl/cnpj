@@ -165,3 +165,4 @@ Este projeto é licenciado sob a Licença MIT.
 ## Notas para Melhorias
 
 - **Tratamento de Erros**: Melhorias adicionais podem ser incluídas, como mecanismos de tentativa de novo download ou tratamento de arquivos parcialmente baixados.
+
