@@ -1,5 +1,6 @@
 import pandas as pd
 import logging
+from tqdm import tqdm
 import os
 import zipfile
 import yaml
@@ -49,36 +50,41 @@ def process_and_merge_files(file_params, dtype_dict, prefix, filter_condition=No
         zip_file_path = file_list[0]
         zip_filename = file_list[1]
         logging.info(f'Reading from ZIP: {zip_filename}')
-        print(f'Reading from ZIP: {zip_filename}')
+        tqdm.write(f'Reading from ZIP: {zip_filename}')
 
         try:
             with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                 zip_file_list = zip_ref.namelist()
                 if len(zip_file_list) == 1:
                     with zip_ref.open(zip_file_list[0]) as csvfile:
-                        df_buff = pd.read_csv(csvfile, sep=csv_sep, decimal=csv_dec, quotechar=csv_quote, dtype=str, encoding=csv_enc, header=None, keep_default_na=False)
-                        df_buff.columns = columns
-                        for column, dtype in dtype_dict.items():
-                            if dtype == bool:
-                                df_buff[column] = df_buff[column].astype(int).astype(bool) # file conversion safety in case of bolean
-                            else:
-                                df_buff[column] = df_buff[column].astype(dtype)
-
+                        df_buff = pd.read_csv(
+                            csvfile 
+                            , header=None
+                            , names=columns
+                            , dtype=dtype_dict
+                            , sep=csv_sep
+                            , decimal=csv_dec
+                            , quotechar=csv_quote
+                            , encoding=csv_enc
+                            , low_memory=False
+                            #, nrows=10000 #FOR TESTING ONLY
+                            )
+                        
                     if filter_condition is not None:
                         df_buff = filter_condition(df_buff)
 
-                    # print(df_buff.dtypes)
+                    print(df_buff.dtypes)
                     logging.info(f'Appending: {zip_filename}')
-                    print(f'Appending: {zip_filename}')
+                    tqdm.write(f'Appending: {zip_filename}')
                     dfs.append(df_buff)
 
                 else:
                     logging.warning(f'ZIP file {zip_filename} contains more than one file.')
-                    print(f'Warning: ZIP file {zip_filename} contains more than one file.')
+                    tqdm.write(f'Warning: ZIP file {zip_filename} contains more than one file.')
 
         except Exception as e:
             logging.error(f"Error processing {zip_filename}: {e}")
-            print(f"Error processing {zip_filename}: {e}")
+            tqdm.write(f"Error processing {zip_filename}: {e}")
     
     if dfs:
         merged_df = pd.concat(dfs, ignore_index=True)
@@ -106,11 +112,11 @@ def export_dataframe(df, export_path):
 
 logging.basicConfig(filename=path_log, level=logging.INFO, format='%(asctime)s | %(name)s | %(levelname)s | %(message)s')
 logging.info('Starting script')
-print('Starting script')
+tqdm.write('Starting script')
 
 ### Mapping incoming files
 logging.info('Mapping incoming files')
-print('Mapping incoming files')
+tqdm.write('Mapping incoming files')
 
 # Parameters for each table
 file_params = {prefix: [] for prefix in dtypes.keys()}
@@ -130,6 +136,6 @@ for prefix, params in file_params.items():
     dtypes_var = dtypes[prefix]  # Get dtypes for the prefix
     df_merged = process_and_merge_files(params, dtypes_var, prefix)
     logging.info(f'Exporting: {prefix}')
-    print(f'Exporting: {prefix}')
+    tqdm.write(f'Exporting: {prefix}')
     outgoing_file_path = os.path.join(path_outgoing, prefix + '.' + export_format)
     export_dataframe(df_merged, outgoing_file_path)
