@@ -119,7 +119,7 @@ for prefix, params in file_params.items():
                             quotechar=csv_quote,
                             encoding=csv_enc,
                             low_memory=False
-                            , nrows=10_000 # For testing
+                            #, nrows=10_000 # For testing
                         )
                     if is_first:
                         logging.info(f'Creating file {export_format}: {outgoing_file_path}')
