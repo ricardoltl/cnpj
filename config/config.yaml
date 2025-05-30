@@ -4,10 +4,10 @@ base_url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'
 csv_sep: ';'
 csv_dec: ','
 csv_quote: '"'
-csv_enc: 'cp1252'
+csv_enc: 'latin1'
 
 # Export format: Choose between 'csv', 'parquet', 'json', or 'feather'
-export_format: 'parquet'
+export_format: 'csv'
 
 # Data type definitions for each table
 dtypes:
@@ -18,7 +18,7 @@ dtypes:
     qualificacao_do_responsavel: "str"
     capital_social: "str"
     porte_da_empresa: "str"
-    ente_federativo_resposavel: "str"
+    ente_federativo_responsavel: "str"
 
   estabelecimentos:
     cnpj_basico: "str"
@@ -42,7 +42,6 @@ dtypes:
     cep: "str"
     uf: "str"
     municipio: "str"
-    situacao_cadastral: "str"
     ddd1: "str"
     telefone1: "str"
     ddd2: "str"
@@ -95,3 +94,6 @@ dtypes:
     opcao_pelo_simples: "str"
     data_opcao_simples: "str"
     data_exclusao_simples: "str"
+    opcao_pelo_mei: "str"
+    data_opcao_mei: "str"
+    data_exclusao_mei: "str"

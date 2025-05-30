@@ -8,12 +8,6 @@
 #   Created by: Joao M. Feck (GitHub: https://github.com/jmfeck)                                   #
 #   Email: joaomfeck@gmail.com                                                                     #
 #                                                                                                  #
-#   Version: 1.0                                                                                   #
-#   License: MIT License                                                                           #
-#                                                                                                  #
-#   This open-source project is designed to help developers, analysts, and companies to            #
-#   easily work with CNPJ data in an automated way. Contributions are welcome!                     #
-#                                                                                                  #
 ####################################################################################################
 
 import os
@@ -85,8 +79,8 @@ def get_latest_month_folder(url):
         latest_folder = sorted(directories, reverse=True)[0]
         return latest_folder.strip('/')
     except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to fetch directories: {e}")
-        tqdm.write(f"Failed to fetch directories: {e}")
+        logging.error(f"Failed to fetch website directories: {e}")
+        tqdm.write(f"Failed to fetch website directories: {e}")
         return None
 
 
@@ -165,6 +159,7 @@ def get_available_threads():
 latest_folder = get_latest_month_folder(base_url)
 
 if latest_folder:
+    logging.info(f"Latest month folder: {latest_folder}")
     tqdm.write(f"Latest month folder: {latest_folder}")
     # Build the full folder URL for the latest month
     folder_url = base_url + '/' + latest_folder + '/'
@@ -173,6 +168,7 @@ if latest_folder:
     files_in_folder = get_all_files_in_folder(folder_url)
     
     if files_in_folder:
+        logging.info(f"Found {len(files_in_folder)} files in folder {latest_folder}")
         tqdm.write(f"Found {len(files_in_folder)} files in folder {latest_folder}")
         
         # Create full download URLs for each file
@@ -180,6 +176,7 @@ if latest_folder:
         
         # Get available threads/CPU cores
         available_threads = get_available_threads()
+        logging.info(f"Number of available threads (CPU cores): {available_threads}")
         tqdm.write(f"Number of available threads (CPU cores): {available_threads}")
         
         # Set up the ThreadPoolExecutor to download files in parallel
@@ -192,6 +189,7 @@ if latest_folder:
                 url = futures[future]
                 try:
                     result = future.result()
+                    logging.info(f"Downloaded: {url}")
                     tqdm.write(f"Downloaded: {url}")
                 except Exception as e:
                     logging.error(f"Error downloading {url}: {e}")
@@ -201,6 +199,8 @@ if latest_folder:
         logging.info(f"Finished downloading files.")
         tqdm.write(f"Finished downloading files.")
     else:
+        logging.info(f"No files found in the folder: {latest_folder}")
         tqdm.write(f"No files found in the folder: {latest_folder}")
 else:
+    logging.info("Could not find the latest month folder. Please check the URL or connection.")
     tqdm.write("Could not find the latest month folder. Please check the URL or connection.")

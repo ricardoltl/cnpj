@@ -52,7 +52,7 @@ Antes de executar os scripts, certifique-se de que o arquivo `config.yaml` estej
 
 ```yaml
 # URL base para o conjunto de dados do CNPJ  
-base_url: 'http://200.152.38.155/CNPJ/dados_abertos_cnpj/'  
+base_url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'  
 
 # Configurações de CSV  
 csv_sep: ';'  
@@ -165,5 +165,3 @@ Este projeto é licenciado sob a Licença MIT.
 ## Notas para Melhorias
 
 - **Tratamento de Erros**: Melhorias adicionais podem ser incluídas, como mecanismos de tentativa de novo download ou tratamento de arquivos parcialmente baixados.
-- **Processamento Paralelo**: O processo de unificação também pode ser otimizado utilizando técnicas de processamento paralelo para lidar com grandes volumes de dados.
-

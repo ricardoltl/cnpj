@@ -56,11 +56,18 @@ def process_and_merge_files(file_params, dtype_dict, prefix, filter_condition=No
                 zip_file_list = zip_ref.namelist()
                 if len(zip_file_list) == 1:
                     with zip_ref.open(zip_file_list[0]) as csvfile:
-                        df_buff = pd.read_csv(csvfile, sep=csv_sep, decimal=csv_dec, quotechar=csv_quote, dtype=dtype_dict, encoding=csv_enc, header=None)
+                        df_buff = pd.read_csv(csvfile, sep=csv_sep, decimal=csv_dec, quotechar=csv_quote, dtype=str, encoding=csv_enc, header=None, keep_default_na=False)
+                        df_buff.columns = columns
+                        for column, dtype in dtype_dict.items():
+                            if dtype == bool:
+                                df_buff[column] = df_buff[column].astype(int).astype(bool) # file conversion safety in case of bolean
+                            else:
+                                df_buff[column] = df_buff[column].astype(dtype)
 
                     if filter_condition is not None:
                         df_buff = filter_condition(df_buff)
 
+                    # print(df_buff.dtypes)
                     logging.info(f'Appending: {zip_filename}')
                     print(f'Appending: {zip_filename}')
                     dfs.append(df_buff)

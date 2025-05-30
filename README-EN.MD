@@ -48,13 +48,13 @@ Before running the scripts, make sure the `config.yaml` file is configured accor
 
 ```yaml
 # Base URL for the CNPJ dataset  
-base_url: 'http://200.152.38.155/CNPJ/dados_abertos_cnpj/'  
+base_url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'  
 
 # CSV settings  
 csv_sep: ';'  
 csv_dec: ','  
 csv_quote: '"'  
-csv_enc: 'cp1252'  
+csv_enc: 'latin1'  
 
 # Export format: Choose between 'csv', 'parquet', 'json', or 'feather'  
 export_format: 'parquet'  
@@ -161,4 +161,3 @@ This project is licensed under the MIT License.
 ## Improvement Notes
 
 - **Error Handling**: Additional improvements can be included, such as retry mechanisms for downloads or handling partially downloaded files.
-- **Parallel Processing**: The unification process can also be optimized using parallel processing techniques to handle large volumes of data.
