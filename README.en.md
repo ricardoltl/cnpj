@@ -25,9 +25,9 @@ The CNPJ Data Extractor is an open-source project that automates the download, e
 ├── data_incoming           # Folder for incoming ZIP data files  
 ├── data_outgoing           # Folder for processed output data  
 ├── logs                    # Folder for log files  
-├── scripts                 # Python scripts  
-│   ├── cnpj_extractor.py   # Script for data extraction (part 1)  
-│   └── cnpj_merger.py      # Script for merging partitioned tables (part 2)
+├── scripts                 # Node.js scripts  
+│   ├── cnpj_extractor.js   # Script for data extraction (part 1)  
+│   └── cnpj_merger.js      # Script for merging partitioned tables (part 2)
 ├── README.md               # Project documentation  
 └── execute_model.bat       # Batch script example for executing the full process (adjust your environment)
 ```
@@ -36,16 +36,14 @@ The CNPJ Data Extractor is an open-source project that automates the download, e
 
 ### Requirements
 
-- Python 3.12+
+- Node.js 18+
 
-### Clone the repository, create a virtual environment and install dependencies
+### Clone the repository and install Node.js dependencies
 
 ```bash
 git clone https://github.com/jmfeck/cnpj-data-extractor.git
 cd cnpj-data-extractor
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+npm install
 ```
 
 ### Configuration
@@ -81,7 +79,7 @@ dtypes:
 
 ## Part 1: Data Extraction
 
-To start the process, run the `cnpj_extractor.py` script.
+To start the process, run the `cnpj_extractor.js` script.
 
 This script will:
 
@@ -95,12 +93,12 @@ This script will:
 Run with:
 
 ```bash
-python cnpj_extractor.py
+npm run extract
 ```
 
 ## Part 2: Data Merging
 
-After downloading the files, run `cnpj_merger.py` to process the data.
+After downloading the files, run `cnpj_merger.js` to process the data.
 
 This script will:
 
@@ -114,7 +112,7 @@ This script will:
 Run with:
 
 ```bash
-python cnpj_merger.py
+npm run merge
 ```
 
 ## Supported Formats

@@ -3,5 +3,6 @@
 /data_incoming/
 /data_outgoing/
 /docs/
+/node_modules/
 
 venv

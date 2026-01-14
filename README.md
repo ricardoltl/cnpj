@@ -23,33 +23,39 @@ O CNPJ Data Extractor é um projeto de código aberto que automatiza o processo 
 ## Estrutura do Projeto
 
 ```
-.  
-├── config  
-│   └── config.yaml         # Arquivo de configuração para caminhos, formatos e tipos de dados  
-├── data_incoming           # Pasta para arquivos ZIP de dados recebidos  
-├── data_outgoing           # Pasta para os dados processados de saída  
-├── logs                    # Pasta para arquivos de log  
-├── scripts                 # Pasta para scripts em Python  
-│   ├── cnpj_extractor.py   # Script para extração de dados (parte 1)  
-│   └── cnpj_merger.py      # Script para unificação das tabelas particionadas (parte 2)
-├── README.md               # Documentação do projeto 
-└── execute_model.bat       # Exemplo de script batch para executar o projeto completo (configure o ambiente antes)
+.
+├── config
+│   └── config.yaml              # Arquivo de configuração para caminhos, formatos e tipos de dados
+├── data_incoming                # Pasta para arquivos ZIP de dados recebidos
+├── data_outgoing                # Pasta para os dados processados de saída
+├── docker
+│   └── mongo-init               # Scripts de inicialização do MongoDB
+│       ├── 01-create-user.js    # Cria usuário do banco
+│       └── create-indexes.js    # Cria índices para otimização
+├── logs                         # Pasta para arquivos de log
+├── scripts
+│   ├── cnpj_extractor.cjs       # Script para extração de dados (parte 1)
+│   ├── cnpj_merger.py           # Script para unificação das tabelas particionadas (parte 2)
+│   ├── cnpj_to_jsonl.py         # Script para conversão para JSONL (parte 3)
+│   ├── import_to_mongo.ps1      # Script Windows para importar no MongoDB
+│   └── import_to_mongo.sh       # Script Linux/Mac para importar no MongoDB
+├── docker-compose.yml           # MongoDB + Mongo Express
+├── README.md                    # Documentação do projeto
+└── execute_model.bat            # Exemplo de script batch para executar o projeto completo
 ```
 
 ## Iniciando o Projeto
 
 ### Pré-requisitos
 
-- Python 3.12+
+- Node.js 18+
 
-### Clone o repositório, crie um ambiente virtual em Python e instale as dependências
+### Clone o repositório e instale as dependências Node.js
 
 ```bash
 git clone https://github.com/jmfeck/cnpj-data-extractor.git
 cd cnpj-data-extractor
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+npm install
 ```
 
 ### Configuração
@@ -85,7 +91,7 @@ dtypes:
 
 ## Parte 1: Extração de Dados
 
-Para iniciar o processo de extração, execute o script `cnpj_extractor.py`.
+Para iniciar o processo de extração, execute o script `cnpj_extractor.js`.
 
 Esse script irá:
 
@@ -99,12 +105,12 @@ Esse script irá:
 Execute com:
 
 ```bash
-python cnpj_extractor.py
+npm run extract
 ```
 
 ## Parte 2: Unificação de Dados
 
-Após o download dos arquivos, execute `cnpj_merger.py` para realizar o processamento dos dados.
+Após o download dos arquivos, execute `cnpj_merger.js` para realizar o processamento dos dados.
 
 Esse script irá:
 
@@ -118,7 +124,7 @@ Esse script irá:
 Execute o script com:
 
 ```bash
-python cnpj_merger.py
+npm run merge
 ```
 
 ## Formatos Suportados
@@ -128,7 +134,126 @@ Atualmente, os formatos de exportação disponíveis são:
 - `csv`
 - `parquet`
 
-Outros formatos como JSON ou Feather podem ser adicionados no futuro.
+## Parte 3: Exportar para MongoDB (Opcional)
+
+Para quem deseja fazer queries mais avançadas nos dados, é possível exportar para MongoDB.
+
+### 3.1 Gerar arquivo JSONL
+
+O script `cnpj_to_jsonl.py` converte os CSVs em um arquivo JSONL otimizado para MongoDB, onde cada empresa é um documento completo contendo:
+
+- Dados cadastrais da empresa
+- Todos os estabelecimentos (matriz e filiais)
+- Todos os sócios
+- Informações do Simples Nacional/MEI
+
+```bash
+python scripts/cnpj_to_jsonl.py
+```
+
+O arquivo `empresas.jsonl` será gerado em `data_outgoing/`.
+
+### 3.2 Subir MongoDB com Docker
+
+O projeto inclui um `docker-compose.yml` com MongoDB e Mongo Express (interface web):
+
+```bash
+docker-compose up -d
+```
+
+Serviços disponíveis:
+- **MongoDB**: `localhost:27017`
+- **Mongo Express (UI)**: http://localhost:8081
+
+### 3.3 Importar dados no MongoDB
+
+Execute o script de importação que também cria os índices otimizados:
+
+```powershell
+# Windows PowerShell
+.\scripts\import_to_mongo.ps1
+```
+
+```bash
+# Linux/Mac
+./scripts/import_to_mongo.sh
+```
+
+### 3.4 Conexão com MongoDB
+
+| Tipo | String de conexão |
+|------|-------------------|
+| Aplicação | `mongodb://cnpj_user:cnpj123@localhost:27017/cnpj` |
+| Admin | `mongodb://admin:admin123@localhost:27017` |
+
+### 3.5 Estrutura do documento
+
+Cada documento representa uma empresa completa:
+
+```json
+{
+  "_id": "12345678",
+  "cnpj_basico": "12345678",
+  "razao_social": "EMPRESA EXEMPLO LTDA",
+  "natureza_juridica": { "codigo": "2062", "descricao": "Sociedade Empresária Limitada" },
+  "capital_social": 100000.0,
+  "porte": { "codigo": "01", "descricao": "Micro Empresa" },
+  "estabelecimentos": [
+    {
+      "cnpj": "12345678000190",
+      "cnpj_formatado": "12.345.678/0001-90",
+      "matriz": true,
+      "nome_fantasia": "EXEMPLO",
+      "situacao_cadastral": { "codigo": "02", "descricao": "Ativa" },
+      "endereco": { "uf": "SP", "municipio": { "codigo": "7107", "nome": "SAO PAULO" } },
+      "contato": { "email": "contato@exemplo.com" },
+      "cnae_principal": { "codigo": "6201501", "descricao": "..." }
+    }
+  ],
+  "socios": [
+    { "nome": "FULANO DA SILVA", "tipo": { "codigo": "2", "descricao": "Pessoa Física" } }
+  ],
+  "simples": { "optante_simples": true, "optante_mei": false }
+}
+```
+
+### 3.6 Índices criados
+
+Os seguintes índices são criados automaticamente para otimizar queries:
+
+- `razao_social` (text search)
+- `estabelecimentos.endereco.uf`
+- `estabelecimentos.endereco.municipio.codigo`
+- `estabelecimentos.cnae_principal.codigo`
+- `estabelecimentos.situacao_cadastral.codigo`
+- `estabelecimentos.cnpj`
+- `socios.nome`
+- Índice composto: `uf + situacao_cadastral`
+
+### 3.7 Exemplos de queries
+
+```javascript
+// Buscar por razão social (text search)
+db.empresas.find({ $text: { $search: "restaurante" } })
+
+// Empresas ativas em São Paulo
+db.empresas.find({
+  "estabelecimentos.endereco.uf": "SP",
+  "estabelecimentos.situacao_cadastral.codigo": "02"
+})
+
+// Buscar por CNPJ completo
+db.empresas.find({ "estabelecimentos.cnpj": "12345678000190" })
+
+// Empresas por CNAE
+db.empresas.find({ "estabelecimentos.cnae_principal.codigo": "6201501" })
+
+// Buscar sócio por nome
+db.empresas.find({ "socios.nome": /SILVA/ })
+
+// Optantes do Simples Nacional
+db.empresas.find({ "simples.optante_simples": true })
+```
 
 ## Logs
 

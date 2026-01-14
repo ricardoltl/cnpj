@@ -1,0 +1,22 @@
+{
+  "name": "cnpj-data-extractor",
+  "version": "1.0.0",
+  "description": "CNPJ Data Extractor (Node.js port)",
+  "main": "scripts/cnpj_extractor.js",
+  "type": "module",
+  "scripts": {
+    "extract": "node scripts/cnpj_extractor.js",
+    "merge": "node scripts/cnpj_merger.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "csv-parse": "^5.5.6",
+    "iconv-lite": "^0.6.3",
+    "js-yaml": "^4.1.0",
+    "p-limit": "^3.1.0",
+    "parquetjs-lite": "^0.8.7",
+    "unzipper": "^0.12.2"
+  }
+}
