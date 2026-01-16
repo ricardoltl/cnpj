@@ -7,7 +7,7 @@ csv_quote: '"'
 csv_enc: 'latin1'
 
 # Export format: Choose between 'csv', 'parquet', 'json', or 'feather'
-export_format: 'csv'
+export_format: 'parquet'
 
 # Data type definitions for each table
 dtypes:
