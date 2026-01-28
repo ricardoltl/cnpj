@@ -5,4 +5,13 @@
 /docs/
 /node_modules/
 
+.DS_Store
+
+# Virtual environments
 venv
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/

@@ -1,347 +1,426 @@
+#!/usr/bin/env python3
 """
-Importador CSV -> PostgreSQL
-Usa COPY para importação rápida e eficiente (sem consumir RAM)
+Script para importar arquivos .parquet do diretório data_outgoing para o PostgreSQL.
+Cada arquivo .parquet será importado para uma tabela com o mesmo nome.
 """
+
 import os
-import subprocess
-import time
+import sys
+import logging
+from datetime import datetime
+from io import StringIO
+from pathlib import Path
 
-########################## Configurações ##########################
-path_script = os.path.abspath(__file__)
-path_script_dir = os.path.dirname(path_script)
-path_project = os.path.dirname(path_script_dir)
-path_outgoing = os.path.join(path_project, 'data_outgoing')
+import pandas as pd
+import pyarrow.parquet as pq
+import psycopg2
+from psycopg2 import sql
+from psycopg2.errors import UndefinedTable
 
-# PostgreSQL
-PG_HOST = "localhost"
-PG_PORT = "5432"
-PG_DB = "cnpj_db"
-PG_USER = "cnpj"
-PG_PASSWORD = "cnpj123"
-
-def log(message):
-    print(f"[{time.strftime('%H:%M:%S')}] {message}")
-
-def run_sql(sql, use_psql=False):
-    """Executa SQL via psql no container"""
-    env = os.environ.copy()
-    env['PGPASSWORD'] = PG_PASSWORD
-
-    cmd = [
-        'docker', 'exec', '-i', 'cnpj-postgres',
-        'psql', '-U', PG_USER, '-d', PG_DB, '-c', sql
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f'logs/postgres_import_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'),
+        logging.StreamHandler()
     ]
+)
+logger = logging.getLogger(__name__)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        log(f"  ERRO: {result.stderr}")
-    return result.returncode == 0
+# Configurações do PostgreSQL
+PG_HOST = os.getenv('PG_HOST', 'localhost')
+PG_PORT = int(os.getenv('PG_PORT', 5432))
+PG_DB = os.getenv('PG_DB', 'cnpj_db')
+PG_USER = os.getenv('PG_USER', 'cnpj')
+PG_PASSWORD = os.getenv('PG_PASSWORD', 'cnpj123')
 
-def run_sql_file(sql):
-    """Executa SQL via docker exec"""
-    env = os.environ.copy()
-    env['PGPASSWORD'] = PG_PASSWORD
+# Diretórios
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_OUTGOING_DIR = BASE_DIR / 'data_outgoing'
 
-    cmd = [
-        'docker', 'exec', '-i', 'cnpj-postgres',
-        'psql', '-U', PG_USER, '-d', PG_DB
-    ]
+# Tamanho do batch para importação
+BATCH_SIZE = int(os.getenv('PG_BATCH_SIZE', 50000))
 
-    result = subprocess.run(cmd, input=sql, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
-        log(f"  ERRO: {result.stderr}")
-    return result.returncode == 0
+# Esquemas das tabelas (colunas em ordem)
+TABLE_SCHEMAS = {
+    'motivos': [
+        'codigo_motivo',
+        'descricao_motivo',
+    ],
+    'municipios': [
+        'codigo_municipio',
+        'nome_municipio',
+    ],
+    'natureza': [
+        'codigo_natureza_juridica',
+        'descricao_natureza_juridica',
+    ],
+    'qualificacoes': [
+        'codigo_qualificacao',
+        'descricao_qualificacao',
+    ],
+    'paises': [
+        'codigo_pais',
+        'nome_pais',
+    ],
+    'empresas': [
+        'cnpj_basico',
+        'razao_social',
+        'natureza_juridica',
+        'qualificacao_do_responsavel',
+        'capital_social',
+        'porte_da_empresa',
+        'ente_federativo_responsavel',
+    ],
+    'estabelecimentos': [
+        'cnpj_basico',
+        'cnpj_ordem',
+        'cnpj_dv',
+        'identificador_matriz_filial',
+        'nome_fantasia',
+        'situacao_cadastral',
+        'data_situacao_cadastral',
+        'motivo_situacao_cadastral',
+        'nome_da_cidade_no_exterior',
+        'pais',
+        'data_de_inicio_da_atividade',
+        'cnae_fiscal_principal',
+        'cnae_fiscal_secundaria',
+        'tipo_de_logradouro',
+        'logradouro',
+        'numero',
+        'complemento',
+        'bairro',
+        'cep',
+        'uf',
+        'municipio',
+        'ddd1',
+        'telefone1',
+        'ddd2',
+        'telefone2',
+        'ddd_do_fax',
+        'fax',
+        'correio_eletronico',
+        'situacao_especial',
+        'data_da_situacao_especial',
+    ],
+    'socios': [
+        'cnpj_basico',
+        'identificador_de_socio',
+        'nome_do_socio',
+        'cnpj_ou_cpf_do_socio',
+        'qualificacao_do_socio',
+        'data_de_entrada_sociedade',
+        'pais',
+        'representante_legal',
+        'nome_do_representante',
+        'qualificacao_do_representante_legal',
+        'faixa_etaria',
+    ],
+    'simples': [
+        'cnpj_basico',
+        'opcao_pelo_simples',
+        'data_opcao_simples',
+        'data_exclusao_simples',
+        'opcao_pelo_mei',
+        'data_opcao_mei',
+        'data_exclusao_mei',
+    ],
+    'cnaes': [
+        'cnpj_basico',
+        'cnae_fiscal_secundaria',
+    ],
+}
 
-def import_csv_via_docker(table_name, csv_file, columns, has_header=True):
-    """Importa CSV usando COPY dentro do container"""
-    header_opt = "HEADER," if has_header else ""
+IMPORT_ORDER = [
+    'motivos',
+    'municipios',
+    'natureza',
+    'qualificacoes',
+    'paises',
+    'empresas',
+    'estabelecimentos',
+    'socios',
+    'simples',
+    'cnaes',
+]
 
-    sql = f"""
-    COPY {table_name} ({columns})
-    FROM '/data/{csv_file}'
-    WITH (FORMAT csv, DELIMITER ';', {header_opt} ENCODING 'LATIN1', QUOTE '"', NULL '');
-    """
 
-    return run_sql_file(sql)
+def connect_to_postgres():
+    """Conecta ao PostgreSQL e retorna a conexão."""
+    try:
+        logger.info(f"Conectando ao PostgreSQL em {PG_HOST}:{PG_PORT}...")
+        conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            database=PG_DB,
+            user=PG_USER,
+            password=PG_PASSWORD,
+        )
+        logger.info("✓ Conectado ao PostgreSQL com sucesso!")
+        return conn
+    except psycopg2.Error as e:
+        logger.error(f"✗ Erro ao conectar ao PostgreSQL: {e}")
+        logger.error("Certifique-se de que o PostgreSQL está rodando (docker compose up -d)")
+        sys.exit(1)
+
+
+def get_parquet_files():
+    """Retorna dict de arquivos .parquet no diretório data_outgoing por tabela."""
+    if not DATA_OUTGOING_DIR.exists():
+        logger.error(f"✗ Diretório não encontrado: {DATA_OUTGOING_DIR}")
+        sys.exit(1)
+
+    parquet_files = {p.stem: p for p in DATA_OUTGOING_DIR.glob('*.parquet')}
+
+    if not parquet_files:
+        logger.warning(f"✗ Nenhum arquivo .parquet encontrado em {DATA_OUTGOING_DIR}")
+        sys.exit(0)
+
+    logger.info(f"✓ Encontrados {len(parquet_files)} arquivos .parquet")
+    return parquet_files
+
+
+def ensure_extensions(conn):
+    """Garante extensões necessárias."""
+    with conn.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+    conn.commit()
+
+
+def create_tables(conn):
+    """Cria as tabelas necessárias se não existirem."""
+    with conn.cursor() as cur:
+        for table, columns in TABLE_SCHEMAS.items():
+            cols_sql = ", ".join([f"{col} TEXT" for col in columns])
+            cur.execute(f"CREATE TABLE IF NOT EXISTS {table} ({cols_sql});")
+    conn.commit()
+
+
+def ensure_table_schema(conn, table, columns):
+    """Garante que a tabela existe com o schema esperado."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s
+            ORDER BY ordinal_position;
+            """,
+            (table,),
+        )
+        existing = [row[0] for row in cur.fetchall()]
+
+    if not existing:
+        cols_sql = ", ".join([f"{col} TEXT" for col in columns])
+        with conn.cursor() as cur:
+            cur.execute(f"CREATE TABLE {table} ({cols_sql});")
+        conn.commit()
+        return True
+
+    if existing == columns:
+        return True
+
+    logger.warning(f"⚠ Schema da tabela '{table}' não bate com o esperado.")
+    logger.warning(f"  Esperado: {columns}")
+    logger.warning(f"  Atual:    {existing}")
+
+    force_recreate = os.getenv('PG_FORCE_RECREATE', '').lower() in {'1', 'true', 'yes', 's'}
+    if force_recreate:
+        response = 's'
+    else:
+        response = input("Deseja recriar a tabela com o schema correto? (s/N): ").lower()
+
+    if response == 's':
+        with conn.cursor() as cur:
+            cur.execute(sql.SQL("DROP TABLE IF EXISTS {} CASCADE;").format(sql.Identifier(table)))
+            cols_sql = ", ".join([f"{col} TEXT" for col in columns])
+            cur.execute(sql.SQL("CREATE TABLE {} ({});").format(sql.Identifier(table), sql.SQL(cols_sql)))
+        conn.commit()
+        logger.info(f"✓ Tabela '{table}' recriada")
+        return True
+
+    logger.error(f"✗ Importação abortada para '{table}' (schema incompatível)")
+    return False
+
+
+def maybe_truncate_table(conn, table):
+    """Pergunta se deve limpar a tabela caso já tenha dados."""
+    with conn.cursor() as cur:
+        try:
+            cur.execute(sql.SQL("SELECT COUNT(*) FROM {};").format(sql.Identifier(table)))
+            count = cur.fetchone()[0]
+        except UndefinedTable:
+            return
+
+    if count > 0:
+        logger.warning(f"⚠ A tabela '{table}' já possui {count:,} registros")
+        response = input("Deseja limpar a tabela antes de importar? (s/N): ").lower()
+        if response == 's':
+            with conn.cursor() as cur:
+                cur.execute(sql.SQL("TRUNCATE TABLE {};").format(sql.Identifier(table)))
+            conn.commit()
+            logger.info(f"✓ Tabela '{table}' limpa")
+        else:
+            logger.info("Continuando sem limpar...")
+
+
+def copy_batch(conn, table, df, columns):
+    """Copia um batch para o PostgreSQL via COPY."""
+    df = df.where(pd.notnull(df), None)
+
+    buffer = StringIO()
+    df.to_csv(
+        buffer,
+        index=False,
+        header=False,
+        sep='\t',
+        na_rep='\\N',
+        quoting=0,
+        escapechar='\\'
+    )
+    buffer.seek(0)
+
+    with conn.cursor() as cur:
+        copy_sql = sql.SQL(
+            "COPY {} ({}) FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '\\N', ESCAPE '\\');"
+        ).format(
+            sql.Identifier(table),
+            sql.SQL(', ').join(map(sql.Identifier, columns))
+        )
+        cur.copy_expert(copy_sql.as_string(conn), buffer)
+
+
+def import_parquet_to_postgres(file_path: Path, conn):
+    """Importa um arquivo .parquet para uma tabela do PostgreSQL."""
+    table = file_path.stem
+    columns = TABLE_SCHEMAS.get(table)
+
+    if not columns:
+        logger.warning(f"⚠ Arquivo ignorado (sem schema conhecido): {file_path.name}")
+        return 0
+
+    logger.info(f"\n{'='*60}")
+    logger.info(f"Processando: {file_path.name}")
+    logger.info(f"Tabela: {table}")
+
+    try:
+        parquet_file = pq.ParquetFile(file_path)
+        total_rows = parquet_file.metadata.num_rows
+        logger.info(f"Total de registros: {total_rows:,}")
+
+        if not ensure_table_schema(conn, table, columns):
+            return 0
+
+        maybe_truncate_table(conn, table)
+
+        total_inserted = 0
+
+        for batch in parquet_file.iter_batches(batch_size=BATCH_SIZE):
+            df = batch.to_pandas()
+            copy_batch(conn, table, df, columns)
+            total_inserted += len(df)
+
+            progress = (total_inserted / total_rows) * 100 if total_rows else 100
+            print(f"\rProgresso: {total_inserted:,}/{total_rows:,} ({progress:.1f}%)", end='', flush=True)
+
+        print()
+        conn.commit()
+        logger.info(f"✓ Importação concluída: {total_inserted:,} registros inseridos")
+        return total_inserted
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"✗ Erro ao importar {file_path.name}: {e}")
+        return 0
+
+
+def create_indexes(conn):
+    """Cria índices úteis para performance de consultas."""
+    with conn.cursor() as cur:
+        # Índices básicos para joins e filtros
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_empresas_cnpj_basico ON empresas (cnpj_basico);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_empresas_natureza ON empresas (natureza_juridica);")
+
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_cnpj_basico ON estabelecimentos (cnpj_basico);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_cnpj_composto ON estabelecimentos (cnpj_basico, cnpj_ordem, cnpj_dv);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_cnae_principal ON estabelecimentos (cnae_fiscal_principal);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_situacao ON estabelecimentos (situacao_cadastral);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_uf ON estabelecimentos (uf);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_estab_municipio ON estabelecimentos (municipio);")
+
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico ON socios (cnpj_basico);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_simples_cnpj_basico ON simples (cnpj_basico);")
+
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_cnaes_cnpj_basico ON cnaes (cnpj_basico);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_cnaes_secundaria ON cnaes (cnae_fiscal_secundaria);")
+
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_motivos_codigo ON motivos (codigo_motivo);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_municipios_codigo ON municipios (codigo_municipio);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_natureza_codigo ON natureza (codigo_natureza_juridica);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_qualificacoes_codigo ON qualificacoes (codigo_qualificacao);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_paises_codigo ON paises (codigo_pais);")
+
+        # Índice GIN para busca fuzzy
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_empresas_razao_social_trgm ON empresas USING gin (razao_social gin_trgm_ops);")
+
+    conn.commit()
+
+
+def show_summary(conn):
+    """Mostra resumo das tabelas importadas."""
+    logger.info(f"\n{'='*60}")
+    logger.info("RESUMO DA IMPORTAÇÃO")
+    logger.info(f"{'='*60}")
+
+    with conn.cursor() as cur:
+        for table in IMPORT_ORDER:
+            cur.execute(sql.SQL("SELECT COUNT(*) FROM {};").format(sql.Identifier(table)))
+            count = cur.fetchone()[0]
+            logger.info(f"{table:.<30} {count:>15,} registros")
+
+    logger.info(f"{'='*60}\n")
+
 
 def main():
-    log("=" * 60)
-    log("Importador CSV -> PostgreSQL")
-    log("=" * 60)
+    """Função principal."""
+    logger.info("=" * 60)
+    logger.info("IMPORTAÇÃO DE DADOS PARQUET PARA POSTGRESQL")
+    logger.info("=" * 60)
 
-    # Cria tabelas
-    log("")
-    log("Criando tabelas...")
+    conn = connect_to_postgres()
 
-    create_tables_sql = """
-    -- Extensão para busca fuzzy
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    ensure_extensions(conn)
+    create_tables(conn)
 
-    -- Tabelas de lookup
-    DROP TABLE IF EXISTS cnaes CASCADE;
-    CREATE TABLE cnaes (
-        codigo VARCHAR(10) PRIMARY KEY,
-        descricao TEXT
-    );
+    parquet_files = get_parquet_files()
 
-    DROP TABLE IF EXISTS municipios CASCADE;
-    CREATE TABLE municipios (
-        codigo VARCHAR(10) PRIMARY KEY,
-        nome VARCHAR(255)
-    );
+    total_files = 0
+    successful_imports = 0
 
-    DROP TABLE IF EXISTS naturezas CASCADE;
-    CREATE TABLE naturezas (
-        codigo VARCHAR(10) PRIMARY KEY,
-        descricao TEXT
-    );
+    for table in IMPORT_ORDER:
+        file_path = parquet_files.get(table)
+        if not file_path:
+            logger.warning(f"⚠ Arquivo não encontrado para a tabela '{table}'")
+            continue
+        total_files += 1
+        logger.info(f"\n[{total_files}] Arquivo: {file_path.name}")
 
-    DROP TABLE IF EXISTS qualificacoes CASCADE;
-    CREATE TABLE qualificacoes (
-        codigo VARCHAR(10) PRIMARY KEY,
-        descricao TEXT
-    );
+        result = import_parquet_to_postgres(file_path, conn)
+        if result > 0:
+            successful_imports += 1
 
-    DROP TABLE IF EXISTS paises CASCADE;
-    CREATE TABLE paises (
-        codigo VARCHAR(10) PRIMARY KEY,
-        nome VARCHAR(255)
-    );
+    create_indexes(conn)
+    show_summary(conn)
 
-    DROP TABLE IF EXISTS motivos CASCADE;
-    CREATE TABLE motivos (
-        codigo VARCHAR(10) PRIMARY KEY,
-        descricao TEXT
-    );
+    conn.close()
 
-    -- Tabelas principais
-    DROP TABLE IF EXISTS empresas CASCADE;
-    CREATE TABLE empresas (
-        cnpj_basico VARCHAR(8) PRIMARY KEY,
-        razao_social TEXT,
-        natureza_juridica VARCHAR(10),
-        qualificacao_responsavel VARCHAR(10),
-        capital_social VARCHAR(20),
-        porte VARCHAR(2),
-        ente_federativo VARCHAR(255)
-    );
+    logger.info(f"✓ Processo finalizado: {successful_imports}/{total_files} arquivos importados com sucesso")
 
-    DROP TABLE IF EXISTS estabelecimentos CASCADE;
-    CREATE TABLE estabelecimentos (
-        cnpj_basico VARCHAR(8),
-        cnpj_ordem VARCHAR(4),
-        cnpj_dv VARCHAR(2),
-        matriz_filial VARCHAR(1),
-        nome_fantasia TEXT,
-        situacao_cadastral VARCHAR(2),
-        data_situacao_cadastral VARCHAR(8),
-        motivo_situacao VARCHAR(10),
-        cidade_exterior VARCHAR(255),
-        pais VARCHAR(10),
-        data_inicio_atividade VARCHAR(8),
-        cnae_principal VARCHAR(10),
-        cnae_secundario TEXT,
-        tipo_logradouro VARCHAR(50),
-        logradouro TEXT,
-        numero VARCHAR(20),
-        complemento TEXT,
-        bairro VARCHAR(255),
-        cep VARCHAR(10),
-        uf VARCHAR(2),
-        municipio VARCHAR(10),
-        ddd1 VARCHAR(5),
-        telefone1 VARCHAR(20),
-        ddd2 VARCHAR(5),
-        telefone2 VARCHAR(20),
-        ddd_fax VARCHAR(5),
-        fax VARCHAR(20),
-        email TEXT,
-        situacao_especial TEXT,
-        data_situacao_especial VARCHAR(8),
-        PRIMARY KEY (cnpj_basico, cnpj_ordem, cnpj_dv)
-    );
+    if successful_imports < total_files:
+        sys.exit(1)
 
-    DROP TABLE IF EXISTS socios CASCADE;
-    CREATE TABLE socios (
-        id SERIAL PRIMARY KEY,
-        cnpj_basico VARCHAR(8),
-        tipo_socio VARCHAR(1),
-        nome TEXT,
-        documento VARCHAR(20),
-        qualificacao VARCHAR(10),
-        data_entrada VARCHAR(8),
-        pais VARCHAR(10),
-        representante_legal VARCHAR(20),
-        nome_representante TEXT,
-        qualificacao_representante VARCHAR(10),
-        faixa_etaria VARCHAR(2)
-    );
-
-    DROP TABLE IF EXISTS simples CASCADE;
-    CREATE TABLE simples (
-        cnpj_basico VARCHAR(8) PRIMARY KEY,
-        opcao_simples VARCHAR(1),
-        data_opcao_simples VARCHAR(8),
-        data_exclusao_simples VARCHAR(8),
-        opcao_mei VARCHAR(1),
-        data_opcao_mei VARCHAR(8),
-        data_exclusao_mei VARCHAR(8)
-    );
-    """
-
-    run_sql_file(create_tables_sql)
-    log("  Tabelas criadas!")
-
-    # Importa lookups
-    log("")
-    log("=" * 60)
-    log("Importando tabelas de lookup...")
-    log("=" * 60)
-
-    lookups = [
-        ('cnaes', 'cnaes.csv', 'codigo, descricao'),
-        ('municipios', 'municipios.csv', 'codigo, nome'),
-        ('naturezas', 'natureza.csv', 'codigo, descricao'),
-        ('qualificacoes', 'qualificacoes.csv', 'codigo, descricao'),
-        ('paises', 'paises.csv', 'codigo, nome'),
-        ('motivos', 'motivos.csv', 'codigo, descricao'),
-    ]
-
-    for table, csv_file, columns in lookups:
-        csv_path = os.path.join(path_outgoing, csv_file)
-        if os.path.exists(csv_path):
-            log(f"  {table}...")
-            start = time.time()
-            import_csv_via_docker(table, csv_file, columns, has_header=True)
-            log(f"    OK ({time.time() - start:.1f}s)")
-        else:
-            log(f"  {table}: arquivo não encontrado")
-
-    # Importa tabelas principais
-    log("")
-    log("=" * 60)
-    log("Importando tabelas principais...")
-    log("=" * 60)
-
-    # Empresas
-    log("  empresas...")
-    start = time.time()
-    import_csv_via_docker(
-        'empresas', 'empresas.csv',
-        'cnpj_basico, razao_social, natureza_juridica, qualificacao_responsavel, capital_social, porte, ente_federativo',
-        has_header=True
-    )
-    log(f"    OK ({time.time() - start:.1f}s)")
-
-    # Estabelecimentos
-    log("  estabelecimentos...")
-    start = time.time()
-    import_csv_via_docker(
-        'estabelecimentos', 'estabelecimentos.csv',
-        'cnpj_basico, cnpj_ordem, cnpj_dv, matriz_filial, nome_fantasia, situacao_cadastral, data_situacao_cadastral, motivo_situacao, cidade_exterior, pais, data_inicio_atividade, cnae_principal, cnae_secundario, tipo_logradouro, logradouro, numero, complemento, bairro, cep, uf, municipio, ddd1, telefone1, ddd2, telefone2, ddd_fax, fax, email, situacao_especial, data_situacao_especial',
-        has_header=True
-    )
-    log(f"    OK ({time.time() - start:.1f}s)")
-
-    # Sócios
-    log("  socios...")
-    start = time.time()
-    import_csv_via_docker(
-        'socios', 'socios.csv',
-        'cnpj_basico, tipo_socio, nome, documento, qualificacao, data_entrada, pais, representante_legal, nome_representante, qualificacao_representante, faixa_etaria',
-        has_header=True
-    )
-    log(f"    OK ({time.time() - start:.1f}s)")
-
-    # Simples
-    log("  simples...")
-    start = time.time()
-    import_csv_via_docker(
-        'simples', 'simples.csv',
-        'cnpj_basico, opcao_simples, data_opcao_simples, data_exclusao_simples, opcao_mei, data_opcao_mei, data_exclusao_mei',
-        has_header=True
-    )
-    log(f"    OK ({time.time() - start:.1f}s)")
-
-    # Cria índices
-    log("")
-    log("=" * 60)
-    log("Criando índices...")
-    log("=" * 60)
-
-    indexes_sql = """
-    -- Índice para busca fuzzy por razão social (pg_trgm)
-    CREATE INDEX IF NOT EXISTS idx_empresas_razao_trgm
-    ON empresas USING gin(razao_social gin_trgm_ops);
-
-    -- Índice para busca por natureza jurídica
-    CREATE INDEX IF NOT EXISTS idx_empresas_natureza
-    ON empresas(natureza_juridica);
-
-    -- Índices para estabelecimentos
-    CREATE INDEX IF NOT EXISTS idx_estab_cnpj_basico
-    ON estabelecimentos(cnpj_basico);
-
-    CREATE INDEX IF NOT EXISTS idx_estab_cnae
-    ON estabelecimentos(cnae_principal);
-
-    CREATE INDEX IF NOT EXISTS idx_estab_uf
-    ON estabelecimentos(uf);
-
-    CREATE INDEX IF NOT EXISTS idx_estab_situacao
-    ON estabelecimentos(situacao_cadastral);
-
-    CREATE INDEX IF NOT EXISTS idx_estab_municipio
-    ON estabelecimentos(municipio);
-
-    -- Índice composto para buscas frequentes
-    CREATE INDEX IF NOT EXISTS idx_estab_uf_situacao_cnae
-    ON estabelecimentos(uf, situacao_cadastral, cnae_principal);
-
-    -- Índice para busca fuzzy por nome fantasia
-    CREATE INDEX IF NOT EXISTS idx_estab_nome_fantasia_trgm
-    ON estabelecimentos USING gin(nome_fantasia gin_trgm_ops);
-
-    -- Índices para sócios
-    CREATE INDEX IF NOT EXISTS idx_socios_cnpj_basico
-    ON socios(cnpj_basico);
-
-    CREATE INDEX IF NOT EXISTS idx_socios_nome_trgm
-    ON socios USING gin(nome gin_trgm_ops);
-
-    -- Atualiza estatísticas
-    ANALYZE;
-    """
-
-    log("  Criando índices (pode demorar alguns minutos)...")
-    start = time.time()
-    run_sql_file(indexes_sql)
-    log(f"  Índices criados! ({time.time() - start:.1f}s)")
-
-    # Finaliza
-    log("")
-    log("=" * 60)
-    log("Importação concluída!")
-    log("=" * 60)
-    log("")
-    log("Acesse o pgAdmin em: http://localhost:8080")
-    log("  Email: admin@admin.com")
-    log("  Senha: admin123")
-    log("")
-    log("Conexão PostgreSQL:")
-    log("  Host: localhost")
-    log("  Porta: 5432")
-    log("  Database: cnpj_db")
-    log("  User: cnpj")
-    log("  Password: cnpj123")
-    log("")
-    log("Exemplo de busca fuzzy:")
-    log("  SELECT e.razao_social, est.telefone1, est.email")
-    log("  FROM empresas e")
-    log("  JOIN estabelecimentos est ON e.cnpj_basico = est.cnpj_basico")
-    log("  WHERE e.razao_social % 'ACADEMIA SMART FIT'")
-    log("  ORDER BY similarity(e.razao_social, 'ACADEMIA SMART FIT') DESC")
-    log("  LIMIT 10;")
 
 if __name__ == '__main__':
     main()

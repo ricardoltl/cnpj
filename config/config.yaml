@@ -66,8 +66,8 @@ dtypes:
     faixa_etaria: "string"
 
   cnaes:
-    cnpj_basico: "string"
-    cnae_fiscal_secundaria: "string"
+    codigo_cnaes: "string"
+    descricao_cnaes: "string"
 
   motivos:
     codigo_motivo: "string"

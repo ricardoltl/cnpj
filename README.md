@@ -1,268 +1,138 @@
 # CNPJ Data Extractor
 
-> 📘 **English version available here** → [README.en.md](README.en.md)
+Este projeto extrai e processa informações de CNPJ (Cadastro Nacional da Pessoa Jurídica) de empresas brasileiras a partir de datasets públicos disponibilizados pela Receita Federal.
 
-## Video Tutorial
+**Criado por:** João M. Feck  
+**GitHub:** [jmfeck](https://github.com/jmfeck)  
+**Email:** joaomfeck@gmail.com
 
-Para uma apresentação em vídeo deste projeto, acesse: [CNPJ Data Extractor - Video Tutorial](https://www.youtube.com/watch?v=PQhjDoVe2vg)
+## 🚀 Instalação e Configuração
 
-## Visão Geral do Projeto
-
-O CNPJ Data Extractor é um projeto de código aberto que automatiza o processo de download, extração e transformação de conjuntos de dados do CNPJ (Cadastro Nacional da Pessoa Jurídica) a partir de fontes públicas disponíveis. O projeto é dividido em duas partes:
-
-1. **Extração de Dados**: Baixar e extrair automaticamente os conjuntos de dados do CNPJ particionados.
-2. **Unificação de Dados**: Combinar as tabelas particionadas em conjuntos de dados consolidados para processamento ou análise posterior.
-
-## Funcionalidades
-
-- **Download Automático de Dados**: Download multithreaded dos conjuntos de dados com verificação de tamanho dos arquivos remotos, evitando downloads redundantes.
-- **Processamento Eficiente de Dados**: Lida com grandes volumes de dados particionados e os consolida em uma única saída.
-- **Formatos de Exportação Flexíveis**: Suporte a CSV e Parquet.
-- **Configuração Modular**: Caminhos, logs e opções de exportação são facilmente ajustáveis por meio de um arquivo de configuração (`config.yaml`).
-
-## Estrutura do Projeto
-
-```
-.
-├── config
-│   └── config.yaml              # Arquivo de configuração para caminhos, formatos e tipos de dados
-├── data_incoming                # Pasta para arquivos ZIP de dados recebidos
-├── data_outgoing                # Pasta para os dados processados de saída
-├── docker
-│   └── mongo-init               # Scripts de inicialização do MongoDB
-│       ├── 01-create-user.js    # Cria usuário do banco
-│       └── create-indexes.js    # Cria índices para otimização
-├── logs                         # Pasta para arquivos de log
-├── scripts
-│   ├── cnpj_extractor.cjs       # Script para extração de dados (parte 1)
-│   ├── cnpj_merger.py           # Script para unificação das tabelas particionadas (parte 2)
-│   ├── cnpj_to_jsonl.py         # Script para conversão para JSONL (parte 3)
-│   ├── import_to_mongo.ps1      # Script Windows para importar no MongoDB
-│   └── import_to_mongo.sh       # Script Linux/Mac para importar no MongoDB
-├── docker-compose.yml           # MongoDB + Mongo Express
-├── README.md                    # Documentação do projeto
-└── execute_model.bat            # Exemplo de script batch para executar o projeto completo
-```
-
-## Iniciando o Projeto
+Este projeto usa [uv](https://github.com/astral-sh/uv) para gerenciamento de dependências, que é extremamente rápido e simples de usar.
 
 ### Pré-requisitos
 
-- Node.js 18+
+- Python 3.12 ou superior
+- uv instalado (você já tem instalado via Homebrew)
 
-### Clone o repositório e instale as dependências Node.js
-
-```bash
-git clone https://github.com/jmfeck/cnpj-data-extractor.git
-cd cnpj-data-extractor
-npm install
-```
-
-### Configuração
-
-Antes de executar os scripts, certifique-se de que o arquivo `config.yaml` esteja configurado corretamente. Esse arquivo contém a URL base, parâmetros de leitura de CSV, tipo de exportação e os tipos de dados esperados para cada tabela.
-
-**Exemplo de config.yaml**:
-
-```yaml
-# URL base para o conjunto de dados do CNPJ
-base_url: 'https://arquivos.receitafederal.gov.br/dados/cnpj/dados_abertos_cnpj'
-
-# Configurações de CSV
-csv_sep: ';'
-csv_dec: ','
-csv_quote: '"'
-csv_enc: 'latin1'
-
-# Formato de exportação: 'csv' ou 'parquet'
-export_format: 'parquet'
-
-# Definições de tipo de dado para cada tabela
-dtypes:
-  empresa:
-    cnpj_basico: "str"
-    razao_social: "str"
-    natureza_juridica: "str"
-    qualificacao_responsavel: "str"
-    capital_social: "float"
-    porte_empresa: "str"
-    ente_federativo_responsavel: "str"
-```
-
-## Parte 1: Extração de Dados
-
-Para iniciar o processo de extração, execute o script `cnpj_extractor.js`.
-
-Esse script irá:
-
-1. Acessar a URL base definida no `config.yaml`
-2. Identificar a pasta mais recente com base no padrão `AAAA-MM`
-3. Listar todos os arquivos `.zip` disponíveis nessa pasta
-4. Verificar se cada arquivo já foi baixado anteriormente (com base no tamanho)
-5. Fazer o download apenas dos arquivos necessários, utilizando múltiplos threads para acelerar o processo
-6. Salvar todos os arquivos na pasta `data_incoming/`
-
-Execute com:
+### Quick Start
 
 ```bash
-npm run extract
+# 1. Clone o repositório (se ainda não fez)
+cd /caminho/para/o/projeto
+
+# 2. Instale as dependências
+uv sync
+
+# 3. Execute qualquer script
+uv run python scripts/cnpj_extractor.py
 ```
 
-## Parte 2: Unificação de Dados
-
-Após o download dos arquivos, execute `cnpj_merger.js` para realizar o processamento dos dados.
-
-Esse script irá:
-
-1. Localizar todos os arquivos `.zip` na pasta `data_incoming/`
-2. Identificar o tipo de cada arquivo com base no prefixo (por exemplo, `empresa`, `estabelecimento`, etc.)
-3. Extrair o conteúdo de cada `.zip` (espera-se que contenha apenas um `.csv`)
-4. Ler os dados aplicando os tipos definidos no `config.yaml`
-5. Unificar os dados de cada tipo em um único arquivo
-6. Exportar os dados consolidados para a pasta `data_outgoing/`, no formato especificado (`csv` ou `parquet`)
-
-Execute o script com:
+### Instalação das Dependências
 
 ```bash
-npm run merge
+# No diretório do projeto, execute:
+uv sync
 ```
 
-## Formatos Suportados
+Este comando irá:
+- Criar um ambiente virtual automaticamente (`.venv`)
+- Instalar todas as dependências especificadas no `pyproject.toml`
+- Configurar o projeto para execução
 
-Atualmente, os formatos de exportação disponíveis são:
+## 📦 Uso
 
-- `csv`
-- `parquet`
+### Executar os scripts
 
-## Parte 3: Exportar para MongoDB (Opcional)
-
-Para quem deseja fazer queries mais avançadas nos dados, é possível exportar para MongoDB.
-
-### 3.1 Gerar arquivo JSONL
-
-O script `cnpj_to_jsonl.py` converte os CSVs em um arquivo JSONL otimizado para MongoDB, onde cada empresa é um documento completo contendo:
-
-- Dados cadastrais da empresa
-- Todos os estabelecimentos (matriz e filiais)
-- Todos os sócios
-- Informações do Simples Nacional/MEI
+#### Opção 1: Usando uv run (recomendado)
 
 ```bash
-python scripts/cnpj_to_jsonl.py
+# Extrator de CNPJ
+uv run python scripts/cnpj_extractor.py
+
+# Mesclador de CNPJ
+uv run python scripts/cnpj_merger.py
+
+# Importador para PostgreSQL
+uv run python scripts/import_to_postgres.py
 ```
 
-O arquivo `empresas.jsonl` será gerado em `data_outgoing/`.
-
-### 3.2 Subir MongoDB com Docker
-
-O projeto inclui um `docker-compose.yml` com MongoDB e Mongo Express (interface web):
+#### Opção 2: Ativando o ambiente virtual
 
 ```bash
-docker-compose up -d
+# Ativar o ambiente virtual
+source .venv/bin/activate  # No macOS/Linux
+# ou
+.venv\Scripts\activate  # No Windows
+
+# Executar os scripts
+python scripts/cnpj_extractor.py
+python scripts/cnpj_merger.py
+python scripts/import_to_postgres.py
+
+# Desativar quando terminar
+deactivate
 ```
 
-Serviços disponíveis:
-- **MongoDB**: `localhost:27017`
-- **Mongo Express (UI)**: http://localhost:8081
+## 📁 Estrutura do Projeto
 
-### 3.3 Importar dados no MongoDB
-
-Execute o script de importação que também cria os índices otimizados:
-
-```powershell
-# Windows PowerShell
-.\scripts\import_to_mongo.ps1
 ```
+cnpj/
+├── config/
+│   └── config.yaml          # Configurações do projeto
+├── scripts/
+│   ├── cnpj_extractor.py    # Script de extração de dados
+│   ├── cnpj_merger.py       # Script de mesclagem de dados
+│   ├── import_to_postgres.py # Script de importação para PostgreSQL
+│   └── import_to_mongodb.py # Script de importação para MongoDB
+├── docker-compose.yml       # Docker Compose para PostgreSQL + pgAdmin
+├── pyproject.toml           # Configuração do projeto e dependências
+├── .python-version          # Versão do Python
+├── POSTGRES.md             # Guia detalhado do PostgreSQL
+└── README.md               # Este arquivo
+```
+
+## 🐘 PostgreSQL
+
+O projeto inclui um `docker-compose.yml` para subir uma instância do PostgreSQL + pgAdmin:
 
 ```bash
-# Linux/Mac
-./scripts/import_to_mongo.sh
+# Subir o PostgreSQL
+docker compose up -d
+
+# Importar dados dos arquivos .parquet
+uv run python scripts/import_to_postgres.py
 ```
 
-### 3.4 Conexão com MongoDB
+Consulte o [POSTGRES.md](POSTGRES.md) para instruções detalhadas e exemplos de consultas.
 
-| Tipo | String de conexão |
-|------|-------------------|
-| Aplicação | `mongodb://cnpj_user:cnpj123@localhost:27017/cnpj` |
-| Admin | `mongodb://admin:admin123@localhost:27017` |
+## ⚙️ Configuração
 
-### 3.5 Estrutura do documento
+As configurações do projeto estão no arquivo `config/config.yaml`. Você pode ajustar:
+- URL base dos arquivos da Receita Federal
+- Configurações de CSV (separador, codificação, etc.)
+- Formato de exportação (parquet, csv, json, feather)
+- Definições de tipos de dados para cada tabela
 
-Cada documento representa uma empresa completa:
+## 🔧 Comandos Úteis do uv
 
-```json
-{
-  "_id": "12345678",
-  "cnpj_basico": "12345678",
-  "razao_social": "EMPRESA EXEMPLO LTDA",
-  "natureza_juridica": { "codigo": "2062", "descricao": "Sociedade Empresária Limitada" },
-  "capital_social": 100000.0,
-  "porte": { "codigo": "01", "descricao": "Micro Empresa" },
-  "estabelecimentos": [
-    {
-      "cnpj": "12345678000190",
-      "cnpj_formatado": "12.345.678/0001-90",
-      "matriz": true,
-      "nome_fantasia": "EXEMPLO",
-      "situacao_cadastral": { "codigo": "02", "descricao": "Ativa" },
-      "endereco": { "uf": "SP", "municipio": { "codigo": "7107", "nome": "SAO PAULO" } },
-      "contato": { "email": "contato@exemplo.com" },
-      "cnae_principal": { "codigo": "6201501", "descricao": "..." }
-    }
-  ],
-  "socios": [
-    { "nome": "FULANO DA SILVA", "tipo": { "codigo": "2", "descricao": "Pessoa Física" } }
-  ],
-  "simples": { "optante_simples": true, "optante_mei": false }
-}
+```bash
+# Adicionar uma nova dependência
+uv add nome-do-pacote
+
+# Remover uma dependência
+uv remove nome-do-pacote
+
+# Atualizar dependências
+uv sync --upgrade
+
+# Limpar o ambiente
+rm -rf .venv
+uv sync
 ```
 
-### 3.6 Índices criados
+## 📝 Notas
 
-Os seguintes índices são criados automaticamente para otimizar queries:
-
-- `razao_social` (text search)
-- `estabelecimentos.endereco.uf`
-- `estabelecimentos.endereco.municipio.codigo`
-- `estabelecimentos.cnae_principal.codigo`
-- `estabelecimentos.situacao_cadastral.codigo`
-- `estabelecimentos.cnpj`
-- `socios.nome`
-- Índice composto: `uf + situacao_cadastral`
-
-### 3.7 Exemplos de queries
-
-```javascript
-// Buscar por razão social (text search)
-db.empresas.find({ $text: { $search: "restaurante" } })
-
-// Empresas ativas em São Paulo
-db.empresas.find({
-  "estabelecimentos.endereco.uf": "SP",
-  "estabelecimentos.situacao_cadastral.codigo": "02"
-})
-
-// Buscar por CNPJ completo
-db.empresas.find({ "estabelecimentos.cnpj": "12345678000190" })
-
-// Empresas por CNAE
-db.empresas.find({ "estabelecimentos.cnae_principal.codigo": "6201501" })
-
-// Buscar sócio por nome
-db.empresas.find({ "socios.nome": /SILVA/ })
-
-// Optantes do Simples Nacional
-db.empresas.find({ "simples.optante_simples": true })
-```
-
-## Logs
-
-Os arquivos de log são gerados automaticamente na pasta `logs/`, permitindo acompanhar erros, tempo de execução e progresso geral.
-
-## Contribuindo
-
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou enviar pull requests.
-
-## Licença
-
-Este projeto está licenciado sob a Licença MIT.
+- O projeto usa Python 3.12.7
+- As dependências são gerenciadas no `pyproject.toml`
+- O uv cria automaticamente um ambiente virtual em `.venv`

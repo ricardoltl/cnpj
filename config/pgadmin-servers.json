@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "CNPJ PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "cnpj_db",
+      "Username": "cnpj",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/pgpassfile"
+    }
+  }
+}
