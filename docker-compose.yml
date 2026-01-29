@@ -1,18 +1,20 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cnpj-postgres:latest
     container_name: cnpj-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: cnpj_db
-      POSTGRES_USER: cnpj
-      POSTGRES_PASSWORD: cnpj123
-      PGDATA: /var/lib/postgresql/data/pgdata
+        POSTGRES_DB: cnpj_db
+        POSTGRES_USER: cnpj
+        POSTGRES_PASSWORD: cnpj123
+        PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./data_outgoing:/data:ro  # Monta data_outgoing como somente leitura
+      - cnpj_postgres_logs:/app/logs
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cnpj -d cnpj_db"]
       interval: 10s
@@ -43,9 +45,9 @@ services:
       - cnpj_network
 
 volumes:
-  postgres_data:
-    driver: local
   pgadmin_data:
+    driver: local
+  cnpj_postgres_logs:
     driver: local
 
 networks:

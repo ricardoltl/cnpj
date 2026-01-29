@@ -6,94 +6,175 @@ csv_dec: ','
 csv_quote: '"'
 csv_enc: 'latin1'
 
-# Export format: Choose between 'csv', 'parquet', 'json', or 'feather'
-export_format: 'parquet'
-
-# Data type definitions for each table
-dtypes:
-  empresas:
-    cnpj_basico: "string"
-    razao_social: "string"
-    natureza_juridica: "string"
-    qualificacao_do_responsavel: "string"
-    capital_social: "string"
-    porte_da_empresa: "string"
-    ente_federativo_responsavel: "string"
-
-  estabelecimentos:
-    cnpj_basico: "string"
-    cnpj_ordem: "string"
-    cnpj_dv: "string"
-    identificador_matriz_filial: "string"
-    nome_fantasia: "string"
-    situacao_cadastral: "string"
-    data_situacao_cadastral: "string"
-    motivo_situacao_cadastral: "string"
-    nome_da_cidade_no_exterior: "string"
-    pais: "string"
-    data_de_inicio_da_atividade: "string"
-    cnae_fiscal_principal: "string"
-    cnae_fiscal_secundaria: "string"
-    tipo_de_logradouro: "string"
-    logradouro: "string"
-    numero: "string"
-    complemento: "string"
-    bairro: "string"
-    cep: "string"
-    uf: "string"
-    municipio: "string"
-    ddd1: "string"
-    telefone1: "string"
-    ddd2: "string"
-    telefone2: "string"
-    ddd_do_fax: "string"
-    fax: "string"
-    correio_eletronico: "string"
-    situacao_especial: "string"
-    data_da_situacao_especial: "string"
-
-  socios:
-    cnpj_basico: "string"
-    identificador_de_socio: "string"
-    nome_do_socio: "string"
-    cnpj_ou_cpf_do_socio: "string"
-    qualificacao_do_socio: "string"
-    data_de_entrada_sociedade: "string"
-    pais: "string"
-    representante_legal: "string"
-    nome_do_representante: "string"
-    qualificacao_do_representante_legal: "string"
-    faixa_etaria: "string"
-
-  cnaes:
-    codigo_cnaes: "string"
-    descricao_cnaes: "string"
-
+# Database structure definitions for each table
+database_structure:
   motivos:
-    codigo_motivo: "string"
-    descricao_motivo: "string"
+    codigo_motivo:
+      type: "TEXT"
+      index: true
+    descricao_motivo:
+      type: "TEXT"
 
   municipios:
-    codigo_municipio: "string"
-    nome_municipio: "string"
+    codigo_municipio:
+      type: "TEXT"
+      index: true
+    nome_municipio:
+      type: "TEXT"
 
   natureza:
-    codigo_natureza_juridica: "string"
-    descricao_natureza_juridica: "string"
+    codigo_natureza_juridica:
+      type: "TEXT"
+      index: true
+    descricao_natureza_juridica:
+      type: "TEXT"
 
   qualificacoes:
-    codigo_qualificacao: "string"
-    descricao_qualificacao: "string"
+    codigo_qualificacao:
+      type: "TEXT"
+      index: true
+    descricao_qualificacao:
+      type: "TEXT"
 
   paises:
-    codigo_pais: "string"
-    nome_pais: "string"
+    codigo_pais:
+      type: "TEXT"
+      index: true
+    nome_pais:
+      type: "TEXT"
+
+  empresas:
+    cnpj_basico:
+      type: "TEXT"
+      index: true
+    razao_social:
+      type: "TEXT"
+      index: true
+    natureza_juridica:
+      type: "TEXT"
+      index: true
+    qualificacao_do_responsavel:
+      type: "TEXT"
+    capital_social:
+      type: "TEXT"
+    porte_da_empresa:
+      type: "TEXT"
+    ente_federativo_responsavel:
+      type: "TEXT"
+
+  estabelecimentos:
+    cnpj_basico:
+      type: "TEXT"
+      index: true
+    cnpj_ordem:
+      type: "TEXT"
+    cnpj_dv:
+      type: "TEXT"
+    identificador_matriz_filial:
+      type: "TEXT"
+    nome_fantasia:
+      type: "TEXT"
+    situacao_cadastral:
+      type: "TEXT"
+      index: true
+    data_situacao_cadastral:
+      type: "TEXT"
+    motivo_situacao_cadastral:
+      type: "TEXT"
+    nome_da_cidade_no_exterior:
+      type: "TEXT"
+    pais:
+      type: "TEXT"
+    data_de_inicio_da_atividade:
+      type: "TEXT"
+    cnae_fiscal_principal:
+      type: "TEXT"
+      index: true
+    cnae_fiscal_secundaria:
+      type: "TEXT"
+    tipo_de_logradouro:
+      type: "TEXT"
+    logradouro:
+      type: "TEXT"
+    numero:
+      type: "TEXT"
+    complemento:
+      type: "TEXT"
+    bairro:
+      type: "TEXT"
+    cep:
+      type: "TEXT"
+    uf:
+      type: "TEXT"
+      index: true
+    municipio:
+      type: "TEXT"
+      index: true
+    ddd1:
+      type: "TEXT"
+    telefone1:
+      type: "TEXT"
+    ddd2:
+      type: "TEXT"
+    telefone2:
+      type: "TEXT"
+    ddd_do_fax:
+      type: "TEXT"
+    fax:
+      type: "TEXT"
+    correio_eletronico:
+      type: "TEXT"
+    situacao_especial:
+      type: "TEXT"
+    data_da_situacao_especial:
+      type: "TEXT"
+
+  socios:
+    cnpj_basico:
+      type: "TEXT"
+      index: true
+    identificador_de_socio:
+      type: "TEXT"
+    nome_do_socio:
+      type: "TEXT"
+    cnpj_ou_cpf_do_socio:
+      type: "TEXT"
+    qualificacao_do_socio:
+      type: "TEXT"
+    data_de_entrada_sociedade:
+      type: "TEXT"
+    pais:
+      type: "TEXT"
+    representante_legal:
+      type: "TEXT"
+    nome_do_representante:
+      type: "TEXT"
+    qualificacao_do_representante_legal:
+      type: "TEXT"
+    faixa_etaria:
+      type: "TEXT"
 
   simples:
-    cnpj_basico: "string"
-    opcao_pelo_simples: "string"
-    data_opcao_simples: "string"
-    data_exclusao_simples: "string"
-    opcao_pelo_mei: "string"
-    data_opcao_mei: "string"
-    data_exclusao_mei: "string"
+    cnpj_basico:
+      type: "TEXT"
+      index: true
+    opcao_pelo_simples:
+      type: "TEXT"
+    data_opcao_simples:
+      type: "TEXT"
+    data_exclusao_simples:
+      type: "TEXT"
+    opcao_pelo_mei:
+      type: "TEXT"
+    data_opcao_mei:
+      type: "TEXT"
+    data_exclusao_mei:
+      type: "TEXT"
+
+  cnaes:
+    cnpj_basico:
+      type: "TEXT"
+      index: true
+    cnae_fiscal_secundaria:
+      type: "TEXT"
+      index: true
