@@ -9,7 +9,6 @@ import sys
 import logging
 import zipfile
 import time
-from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
@@ -20,19 +19,19 @@ from psycopg2.errors import UndefinedTable
 import yaml
 from tqdm import tqdm
 
-# Configuração de logging
+# Detect if running in interactive terminal (TTY)
+IS_INTERACTIVE = sys.stdout.isatty()
+
+# Configuração de logging (apenas console, sem arquivo)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f'logs/cnpj_importer_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
 # Configurações do PostgreSQL (usando variáveis padrão do Postgres)
-PG_HOST = os.getenv('POSTGRES_HOST', 'localhos222t')
+PG_HOST = os.getenv('POSTGRES_HOST', 'localhost')
 PG_PORT = int(os.getenv('POSTGRES_PORT', '5432'))
 PG_DB = os.getenv('POSTGRES_DB', 'cnpj_db')
 PG_USER = os.getenv('POSTGRES_USER', 'cnpj')
@@ -45,7 +44,7 @@ CONFIG_DIR = BASE_DIR / 'config'
 CONFIG_FILE = CONFIG_DIR / 'config.yaml'
 
 # Tamanho do batch para leitura e importação
-BATCH_SIZE = int(os.getenv('PG_BATCH_SIZE', 50000))
+BATCH_SIZE = int(os.getenv('POSTGRES_BATCH_SIZE', 100000))
 
 # Ordem de importação das tabelas (respeita dependências)
 IMPORT_ORDER = [
@@ -60,6 +59,16 @@ IMPORT_ORDER = [
     'simples',
     'cnaes',
 ]
+
+
+def log_message(message, level='info'):
+    """Helper function to log messages appropriately based on environment."""
+    if level == 'info':
+        logger.info(message)
+    elif level == 'warning':
+        logger.warning(message)
+    elif level == 'error':
+        logger.error(message)
 
 
 def load_config():
@@ -161,10 +170,14 @@ def create_or_validate_table(conn, table, columns, types):
     logger.warning(f"  Esperado: {columns}")
     logger.warning(f"  Atual:    {existing_cols}")
     
-    force_recreate = os.getenv('PG_FORCE_RECREATE', 'true').lower() in {'1', 'true', 'yes', 's'}
-    if force_recreate:
+    force_recreate = os.getenv('POSTGRES_FORCE_RECREATE', 'ask').lower()
+    
+    if force_recreate == 'true':
         response = 's'
-    else:
+    elif force_recreate == 'false':
+        logger.info(f"⊗ Pulando recriação da tabela '{table}' (POSTGRES_FORCE_RECREATE=false)")
+        return False
+    else:  # 'ask' ou qualquer outro valor
         response = input("Deseja recriar a tabela com o schema correto? (s/N): ").lower()
     
     if response == 's':
@@ -181,21 +194,25 @@ def create_or_validate_table(conn, table, columns, types):
 
 
 def maybe_truncate_table(conn, table):
-    """Pergunta se deve limpar a tabela caso já tenha dados."""
+    """Pergunta se deve limpar a tabela caso já tenha dados. Retorna True se deve prosseguir com importação."""
     with conn.cursor() as cur:
         try:
             cur.execute(sql.SQL("SELECT COUNT(*) FROM {};").format(sql.Identifier(table)))
             count = cur.fetchone()[0]
         except UndefinedTable:
-            return
+            return True
     
     if count > 0:
         logger.warning(f"⚠ A tabela '{table}' já possui {count:,} registros")
         
-        force_truncate = os.getenv('PG_FORCE_TRUNCATE', 'true').lower() in {'1', 'true', 'yes', 's'}
-        if force_truncate:
+        force_truncate = os.getenv('POSTGRES_FORCE_TRUNCATE', 'ask').lower()
+        
+        if force_truncate == 'true':
             response = 's'
-        else:
+        elif force_truncate == 'false':
+            logger.info(f"⊗ Pulando importação da tabela '{table}' (POSTGRES_FORCE_TRUNCATE=false e tabela já possui dados)")
+            return False
+        else:  # 'ask' ou qualquer outro valor
             response = input("Deseja limpar a tabela antes de importar? (s/N): ").lower()
         
         if response == 's':
@@ -203,8 +220,12 @@ def maybe_truncate_table(conn, table):
                 cur.execute(sql.SQL("TRUNCATE TABLE {};").format(sql.Identifier(table)))
             conn.commit()
             logger.info(f"✓ Tabela '{table}' limpa")
+            return True
         else:
-            logger.info("Continuando sem limpar...")
+            logger.info(f"⊗ Pulando importação da tabela '{table}' (mantendo dados existentes)")
+            return False
+    
+    return True
 
 
 def copy_batch(conn, table, df, columns):
@@ -278,6 +299,7 @@ def import_zip_to_postgres(zip_file_path, conn, table, columns, config):
             with zip_ref.open(csv_filename) as csvfile:
                 # Lê o CSV em chunks para não sobrecarregar a memória
                 total_inserted = 0
+                last_log_count = 0
                 
                 for chunk in pd.read_csv(
                     csvfile,
@@ -293,9 +315,20 @@ def import_zip_to_postgres(zip_file_path, conn, table, columns, config):
                 ):
                     copy_batch(conn, table, chunk, columns)
                     total_inserted += len(chunk)
-                    print(f"\r  Registros importados: {total_inserted:,}", end='', flush=True)
+                    
+                    if IS_INTERACTIVE:
+                        print(f"\r  [{table}] {zip_file_path.name} - Registros: {total_inserted:,}", end='', flush=True)
+                    else:
+                        # Em ambiente Docker, log a cada 100k registros
+                        if total_inserted - last_log_count >= 100000:
+                            logger.info(f"  [{table}] {zip_file_path.name} - Registros: {total_inserted:,}")
+                            last_log_count = total_inserted
                 
-                print()  # Nova linha após o progresso
+                if IS_INTERACTIVE:
+                    print()  # Nova linha após o progresso
+                else:
+                    logger.info(f"  [{table}] {zip_file_path.name} - Total: {total_inserted:,} registros")
+                
                 return total_inserted
     
     except Exception as e:
@@ -320,8 +353,9 @@ def import_table(conn, table, config):
     if not create_or_validate_table(conn, table, columns, types):
         return 0
     
-    # Pergunta se deve truncar
-    maybe_truncate_table(conn, table)
+    # Pergunta se deve truncar (retorna False se deve pular importação)
+    if not maybe_truncate_table(conn, table):
+        return 0
     
     # Encontra arquivos .zip
     zip_files = find_zip_files_for_table(table)
